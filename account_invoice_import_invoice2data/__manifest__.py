@@ -4,7 +4,7 @@
 
 {
     "name": "Account Invoice Import Invoice2data",
-    "version": "14.0.2.1.0",
+    "version": "14.0.2.1.1",
     "category": "Accounting/Accounting",
     "license": "AGPL-3",
     "summary": "Import supplier invoices using the invoice2data lib",
@@ -16,8 +16,7 @@
     "external_dependencies": {
         "python": [
             "invoice2data",
-            # https://github.com/OCA/edi/issues/544
-            "dateparser==1.1.1",
+            "dateparser",
         ],
         "deb": ["poppler-utils"],
     },
