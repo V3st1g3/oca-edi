@@ -40,6 +40,8 @@ class AccountInvoiceImport(models.TransientModel):
 
     @api.model
     def parse_invoice2data_taxes(self, line):
+        amount = 0.0
+        amount_type = False
         taxes = []
         type_code = "VAT"
         price_include = False
@@ -69,10 +71,12 @@ class AccountInvoiceImport(models.TransientModel):
         )
         return taxes
 
-    def _clean_string(self, string):
+    @staticmethod
+    def _clean_string(string):
         return re.sub(r"\W+", "", string)
 
-    def _clean_digits(self, string):
+    @staticmethod
+    def _clean_digits(string):
         return re.sub(r"\D+", "", string)
 
     @api.model
@@ -98,7 +102,9 @@ class AccountInvoiceImport(models.TransientModel):
             invoice2data_res = extract_data(fileobj.name, templates=templates)
         except Exception as e:
             fileobj.close()
-            raise UserError(_("PDF Invoice parsing failed. Error message: %s") % e)
+            raise UserError(
+                _("PDF Invoice parsing failed. Error message: %s") % e
+            ) from None
         if not invoice2data_res:
             if not shutil.which("tesseract"):
                 logger.warning(
@@ -116,7 +122,9 @@ class AccountInvoiceImport(models.TransientModel):
                 )
             except Exception as e:
                 fileobj.close()
-                raise UserError(_("PDF Invoice parsing failed. Error message: %s") % e)
+                raise UserError(
+                    _("PDF Invoice parsing failed. Error message: %s") % e
+                ) from None
             if not invoice2data_res:
                 fileobj.close()
                 return False

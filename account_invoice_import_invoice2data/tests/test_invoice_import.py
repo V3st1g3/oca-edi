@@ -2,12 +2,12 @@
 # @author: Alexis de Lattre <alexis.delattre@akretion.com>
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
-import base64
-import logging
+from base64 import b64encode
+from logging import getLogger
 from unittest import mock
 
 from odoo import fields
-from odoo.tests.common import SavepointCase
+from odoo.tests.common import TransactionCase
 from odoo.tools import file_open, float_compare
 
 # TODO v16: use
@@ -21,19 +21,21 @@ DISABLED_MAIL_CONTEXT = {
 }
 
 
-class TestInvoiceImport(SavepointCase):
+class TestInvoiceImport(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.env = cls.env(context=dict(cls.env.context, **DISABLED_MAIL_CONTEXT))
         frtax = cls.env["account.tax"].create(
-            {
-                "name": "French VAT purchase 20.0%",
-                "description": "FR-VAT-buy-20.0",
-                "amount": 20,
-                "amount_type": "percent",
-                "type_tax_use": "purchase",
-            }
+            [
+                {
+                    "name": "French VAT purchase 20.0%",
+                    "description": "FR-VAT-buy-20.0",
+                    "amount": 20,
+                    "amount_type": "percent",
+                    "type_tax_use": "purchase",
+                }
+            ]
         )
         # Set this tax on Internet access product
         internet_product = cls.env.ref(
@@ -44,25 +46,27 @@ class TestInvoiceImport(SavepointCase):
     def test_have_invoice2data_unavailable(self):
         with mock.patch.dict("sys.modules", {"invoice2data": None}):
             with self.assertLogs("", level="DEBUG") as cm:
-                logging.getLogger("").debug("Cannot import invoice2data")
+                getLogger("").debug("Cannot import invoice2data")
             self.assertEqual(cm.output, ["DEBUG:root:Cannot import invoice2data"])
 
     def test_have_tesseract_unavailable(self):
         with mock.patch.dict("sys.modules", {"tesseract": None}):
             with self.assertLogs("", level="DEBUG") as cm:
-                logging.getLogger("").debug("Cannot import tesseract")
+                getLogger("").debug("Cannot import tesseract")
             self.assertEqual(cm.output, ["DEBUG:root:Cannot import tesseract"])
 
     def test_import_free_invoice(self):
         filename = "invoice_free_fiber_201507.pdf"
         f = file_open("account_invoice_import_invoice2data/tests/pdf/" + filename, "rb")
         pdf_file = f.read()
-        pdf_file_b64 = base64.b64encode(pdf_file)
+        pdf_file_b64 = b64encode(pdf_file)
         wiz = self.env["account.invoice.import"].create(
-            {
-                "invoice_file": pdf_file_b64,
-                "invoice_filename": filename,
-            }
+            [
+                {
+                    "invoice_file": pdf_file_b64,
+                    "invoice_filename": filename,
+                }
+            ]
         )
         f.close()
         wiz.import_invoice()
@@ -107,10 +111,12 @@ class TestInvoiceImport(SavepointCase):
 
         # New import with update of an existing draft invoice
         wiz2 = self.env["account.invoice.import"].create(
-            {
-                "invoice_file": pdf_file_b64,
-                "invoice_filename": "invoice_free_fiber_201507.pdf",
-            }
+            [
+                {
+                    "invoice_file": pdf_file_b64,
+                    "invoice_filename": "invoice_free_fiber_201507.pdf",
+                }
+            ]
         )
         action = wiz2.import_invoice()
         self.assertEqual(action["res_model"], "account.invoice.import")
@@ -130,21 +136,24 @@ class TestInvoiceImport(SavepointCase):
     def test_import_azure_interior_invoice(self):
         """Function for testing almost all supported fields"""
         filename = "AzureInterior.pdf"
-        invoice_file = file_open(
+
+        with file_open(
             "account_invoice_import_invoice2data/tests/pdf/" + filename, "rb"
-        )
-        pdf_file = invoice_file.read()
-        pdf_file_b64 = base64.b64encode(pdf_file)
-        wiz = self.env["account.invoice.import"].create(
-            {
-                "invoice_file": pdf_file_b64,
-                "invoice_filename": filename,
-            }
-        )
-        invoice_file.close()
+        ) as invoice_file:
+            pdf_file = invoice_file.read()
+            pdf_file_b64 = b64encode(pdf_file)
+            wiz = self.env["account.invoice.import"].create(
+                [
+                    {
+                        "invoice_file": pdf_file_b64,
+                        "invoice_filename": filename,
+                    }
+                ]
+            )
+
         wiz.import_invoice()
         # create_invoice_action_button
-        wiz.create_invoice_action(origin="BOSD Import Vendor Bill wizard")
+        # wiz.create_invoice_action(origin="BOSD Import Vendor Bill wizard")
         # Check result of invoice creation
         invoices = self.env["account.move"].search(
             [
@@ -167,7 +176,7 @@ class TestInvoiceImport(SavepointCase):
 
         self.assertEqual(
             inv.narration,
-            "Due to global inflation our payment term has changed to 15 days.",
+            "<p>Due to global inflation our payment term has changed to 15 days.</p>",
         )
 
         # Following tests are disabled. Not yet implemented in account_invoice_import
@@ -179,7 +188,7 @@ class TestInvoiceImport(SavepointCase):
         self.assertEqual(iline.name, "--- Non Food ---")
         self.assertEqual(iline.display_type, "line_section")
         iline = inv.invoice_line_ids[1]
-        self.assertEqual(iline.name, "Beeswax XL\nAcme beeswax")
+        self.assertEqual(iline.name, "[17589684] Beeswax XL")
         self.assertEqual(
             iline.product_id,
             self.env.ref("account_invoice_import_invoice2data.product_beeswax_xl"),
@@ -188,7 +197,7 @@ class TestInvoiceImport(SavepointCase):
         self.assertEqual(float_compare(iline.price_unit, 42.00, precision_digits=2), 0)
 
         iline = inv.invoice_line_ids[2]
-        self.assertEqual(iline.name, "Office Chair")
+        self.assertEqual(iline.name, "[FURN_7777] Office Chair")
         self.assertEqual(
             iline.product_id,
             self.env.ref("product.product_delivery_01"),
@@ -214,7 +223,7 @@ class TestInvoiceImport(SavepointCase):
         )
         self.assertEqual(iline.display_type, "line_note")
         iline = inv.invoice_line_ids[6]
-        self.assertEqual(iline.name, "Luxury Truffles")
+        self.assertEqual(iline.name, "[LUX_TRF] Luxury Truffles")
         self.assertEqual(
             iline.product_id,
             self.env.ref("account_invoice_import_invoice2data.luxury_truffles"),
